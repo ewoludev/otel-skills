@@ -79,7 +79,7 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          for manifest in ".claude-plugin/plugin.json" ".cursor-plugin/plugin.json" "gemini-extension.json"; do 
+          for manifest in ".claude-plugin/plugin.json" ".cursor-plugin/plugin.json" "gemini-extension.json" "tile.json"; do
             jq ".version = \"${TAG}\"" "${manifest}" > "${manifest}.tmp"
             mv "${manifest}.tmp" "${manifest}"
             git add "${manifest}"
