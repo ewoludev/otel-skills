@@ -8,8 +8,6 @@ metadata:
 
 # OpenTelemetry Transformation Language (OTTL)
 
-Use OTTL to transform, filter, and manipulate telemetry data inside the OpenTelemetry Collector — without changing application code.
-
 ## Components that use OTTL
 
 OTTL is not limited to the transform and filter processors.
@@ -28,14 +26,7 @@ span.attributes["http.method"]
 resource.attributes["service.name"]
 ```
 
-**Contexts** (first path segment) map to OpenTelemetry signal structures:
-- `resource` - Resource-level attributes
-- `scope` - Instrumentation scope
-- `span` - Span data (traces)
-- `spanevent` - Span events
-- `metric` - Metric metadata
-- `datapoint` - Metric data points
-- `log` - Log records
+**Contexts** (first path segment): `resource`, `scope`, `span`, `spanevent`, `metric`, `datapoint`, `log`.
 
 ### Enumerations
 
@@ -48,11 +39,7 @@ span.kind == SPAN_KIND_SERVER
 
 ### Operators
 
-| Category | Operators |
-|----------|-----------|
-| Assignment | `=` |
-| Comparison | `==`, `!=`, `>`, `<`, `>=`, `<=` |
-| Logical | `and`, `or`, `not` |
+Assignment: `=` — Comparison: `==`, `!=`, `>`, `<`, `>=`, `<=` — Logical: `and`, `or`, `not`
 
 ### Functions
 
@@ -72,6 +59,8 @@ set(span.attributes["region"], "us-east-1")
 delete_key(resource.attributes, "internal.key")
 limit(log.attributes, 10, [])
 ```
+
+See [function-reference](./rules/function-reference.md) for the full list of editors and converters.
 
 ### Conditional statements
 
@@ -120,46 +109,7 @@ set(resource.attributes["k8s.cluster.name"], "prod-aws-us-west-2")
 
 ### Redact sensitive data
 
-Guard with a `nil` check to avoid creating the attribute when it does not exist.
-
-| Strategy | Function | When to use |
-|----------|----------|-------------|
-| Replace with placeholder | `set(target, "REDACTED")` | Known sensitive attributes (auth headers, cookies) |
-| Mask partial value | `replace_pattern(target, regex, replacement)` | Preserve structure while hiding detail (credit card numbers, IPs) |
-| Hash | `SHA256(target)` | Remove raw value but keep a correlatable identifier (emails, user IDs) |
-| Delete | `delete_key(map, key)` | Attribute should never leave the Collector |
-| Drop record | Filter processor | Entire record is sensitive (e.g., contains private keys) |
-
-```yaml
-processors:
-  transform/redact:
-    error_mode: ignore
-    trace_statements:
-      - context: span
-        statements:
-          # Replace — auth and session headers
-          - set(span.attributes["http.request.header.authorization"], "REDACTED") where span.attributes["http.request.header.authorization"] != nil
-          - set(span.attributes["http.request.header.cookie"], "REDACTED") where span.attributes["http.request.header.cookie"] != nil
-          # Hash — emails (preserves correlation)
-          - set(span.attributes["user.email"], SHA256(span.attributes["user.email"])) where span.attributes["user.email"] != nil
-          # Delete — attributes that must never be exported
-          - delete_key(span.attributes, "credit-card.number")
-    log_statements:
-      - context: log
-        statements:
-          # Mask — credit card numbers (keep first/last 4 digits)
-          - replace_pattern(log.body["string"], "\\b(\\d{4})\\d{5,11}(\\d{4})\\b", "$$1****$$2")
-  filter/drop-sensitive-logs:
-    error_mode: ignore
-    logs:
-      log_record:
-        - 'IsMatch(log.body["string"], "(?i)-----BEGIN (RSA |EC )?PRIVATE KEY-----")'
-```
-
-Place redaction processors **after** enrichment processors (`resourcedetection`, `k8sattributes`, `resource`) and **before** exporters.
-See [processor ordering](../otel-collector/rules/processors.md#processor-ordering) for the full ordering guidance.
-
-See the [sensitive data](../otel-instrumentation/rules/sensitive-data.md) rule for application-level sanitization.
+See [redaction](./rules/redaction.md) for strategies (replace, mask, hash, delete, drop) with examples.
 
 ### Drop telemetry by pattern
 
@@ -229,7 +179,7 @@ and
 IsMatch(ConvertCase(String(resource.attributes["service.namespace"]), "lower"), "^platform.*$")
 ```
 
-See [patterns](./rules/patterns.md) for specialized patterns: normalize high-cardinality attributes (path segments, IP masking), limit attribute count/length, and enrich with static resource attributes.
+See [cardinality](./rules/cardinality.md) for normalizing high-cardinality attributes (path segments, IP masking, attribute count/length limits) and [enrichment](./rules/enrichment.md) for adding static resource attributes.
 
 ## Error handling
 
@@ -267,18 +217,17 @@ processors:
         statements:
           - set(span.attributes["parsed"], ParseJSON(span.attributes["json_body"]))
 ```
-
 ## Performance
 
-Use `where` clauses to skip items early rather than applying unconditional transforms.
+Use `where` clauses to skip items early.
 
-## Function reference
+```
+# BAD — runs replace_pattern on every span
+replace_pattern(span.attributes["url.path"], "/\\d+", "/{id}")
 
-See [function-reference](./rules/function-reference.md) for the full list of editors and converters.
-
-**Editors** (lowercase, modify data in-place): `set`, `delete_key`, `delete_matching_keys`, `keep_keys`, `replace_pattern`, `replace_match`, `merge_maps`, `limit`, `truncate_all`, `flatten`, `append`.
-
-**Converters** (uppercase, return values): `IsMatch`, `Concat`, `Substring`, `ConvertCase`, `SHA256`, `ParseJSON`, `ExtractPatterns`, `Now`, `UnixNano`, `Len`, `String`, `Int`, `Double`, `Bool`.
+# GOOD — skips spans that lack the attribute
+replace_pattern(span.attributes["url.path"], "/\\d+", "/{id}") where span.attributes["url.path"] != nil
+```
 
 ## References
 
