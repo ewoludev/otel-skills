@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.2 (2026-05-01)
+
+### Fixed
+
+- tile validation
+
+### Changed
+
+- update plugin manifests for v1.2.2
+- update tessl tile version on release
+
+
 ## v1.2.1 (2026-05-01)
 
 ### Fixed
