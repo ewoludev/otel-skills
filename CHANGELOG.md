@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.3 (2026-05-01)
+
+### Changed
+
+- update plugin manifests for v1.2.3
+- move installation instructions to INSTALL.md and add tessl
+
+
 ## v1.2.2 (2026-05-01)
 
 ### Fixed
