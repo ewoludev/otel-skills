@@ -1,0 +1,11 @@
+{
+  "name": "dash0/otel-instrumentation",
+  "version": "0.1.0",
+  "private": false,
+  "summary": "Configures trace spans, defines custom metrics, sets up log exporters, and optimizes sampling strategies for OpenTelemetry instrumentation. Use when instrumenting applications with traces, metrics, or logs. Triggers on requests for observability, telemetry, tracing, metrics collection, logging integration, or OTel setup.",
+  "skills": {
+    "otel-instrumentation": {
+      "path": "SKILL.md"
+    }
+  }
+}

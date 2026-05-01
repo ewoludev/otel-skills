@@ -1,0 +1,11 @@
+{
+  "name": "dash0/otel-semantic-conventions",
+  "version": "0.1.0",
+  "private": false,
+  "summary": "OpenTelemetry Semantic Conventions expert. Use when selecting, applying, or reviewing telemetry attributes. Triggers on tasks involving attribute selection, semantic convention compliance, attribute migration, or custom attribute decisions. Covers the attribute registry, naming patterns, attribute placement, and versioning. For span names, span kinds, and span status codes, see the otel-instrumentation skill.",
+  "skills": {
+    "otel-semantic-conventions": {
+      "path": "SKILL.md"
+    }
+  }
+}
