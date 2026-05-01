@@ -1,6 +1,6 @@
 ---
 name: 'otel-instrumentation'
-description: Expert guidance for emitting high-quality, cost-efficient OpenTelemetry telemetry. Use when instrumenting applications with traces, metrics, or logs. Triggers on requests for observability, telemetry, tracing, metrics collection, logging integration, or OTel setup.
+description: Configures trace spans, defines custom metrics, sets up log exporters, and optimizes sampling strategies for OpenTelemetry instrumentation. Use when instrumenting applications with traces, metrics, or logs. Triggers on requests for observability, telemetry, tracing, metrics collection, logging integration, or OTel setup.
 license: MIT
 metadata:
   author: dash0
@@ -15,19 +15,19 @@ metadata:
 
 Expert guidance for implementing high-quality, cost-efficient OpenTelemetry telemetry.
 
-## Rules
+## Rules & Quick Reference
 
-| Rule | Description |
-|------|-------------|
-| [telemetry](./rules/telemetry.md) | **Entrypoint** - signal types, correlation, and navigation |
+| Use Case / Rule | Description |
+|-----------------|-------------|
+| [telemetry](./rules/telemetry.md) | **Entrypoint** — signal types, correlation, and navigation |
 | [resolve-values](./rules/resolve-values.md) | Resolving configuration values from the codebase |
-| [resources](./rules/resources.md) | Resource attributes - service identity and environment |
-| [k8s](./rules/platforms/k8s.md) | Kubernetes deployment - downward API, pod spec |
-| [spans](./rules/spans.md) | Spans - naming, kind, status, and hygiene |
-| [logs](./rules/logs.md) | Logs - structured logging, severity, trace correlation |
-| [metrics](./rules/metrics.md) | Metrics - instrument types, naming, units, cardinality |
-| [sensitive-data](./rules/sensitive-data.md) | Sensitive data - PII prevention, sanitization, redaction |
-| [validation](./rules/validation.md) | Telemetry validation - post-deployment verification checklist |
+| [resources](./rules/resources.md) | Resource attributes — service identity and environment |
+| [k8s](./rules/platforms/k8s.md) | Kubernetes deployment — downward API, pod spec |
+| [spans](./rules/spans.md) | Spans — naming, kind, status, and hygiene |
+| [logs](./rules/logs.md) | Logs — structured logging, severity, trace correlation |
+| [metrics](./rules/metrics.md) | Metrics — instrument types, naming, units, cardinality |
+| [sensitive-data](./rules/sensitive-data.md) | Sensitive data — PII prevention, sanitization, redaction |
+| [validation](./rules/validation.md) | Telemetry validation — post-deployment verification checklist |
 | [nodejs](./rules/sdks/nodejs.md) | Node.js instrumentation setup |
 | [go](./rules/sdks/go.md) | Go instrumentation setup |
 | [python](./rules/sdks/python.md) | Python instrumentation setup |
@@ -44,6 +44,42 @@ Expert guidance for implementing high-quality, cost-efficient OpenTelemetry tele
 - [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
 - [Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/)
 - [Dash0 Integration Hub](https://www.dash0.com/hub/integrations)
+
+## Getting started
+
+Follow these steps when instrumenting an application from scratch:
+
+1. **Pick your SDK rule** — choose the language-specific rule from the table above (e.g., [nodejs](./rules/sdks/nodejs.md), [python](./rules/sdks/python.md)).
+2. **Set up resource attributes** — define service identity and environment per [resources](./rules/resources.md).
+3. **Add spans, metrics, and logs** — instrument your code following [spans](./rules/spans.md), [metrics](./rules/metrics.md), and [logs](./rules/logs.md).
+4. **Guard sensitive data** — scrub PII before export per [sensitive-data](./rules/sensitive-data.md).
+5. **Validate** — confirm telemetry reaches the backend using the checklist in [validation](./rules/validation.md).
+
+The snippet below shows a complete span with attributes and status for Node.js — see [nodejs](./rules/sdks/nodejs.md) for full setup including SDK initialisation, exporter configuration, and auto-instrumentation:
+
+```js
+const { trace, SpanStatusCode } = require('@opentelemetry/api');
+const tracer = trace.getTracer('my-service', '1.0.0');
+
+tracer.startActiveSpan('operation-name', async (span) => {
+  try {
+    span.setAttribute('user.id', userId);
+    span.setAttribute('order.id', orderId);
+
+    const result = await processOrder(orderId);
+
+    span.setAttribute('order.status', result.status);
+    span.setStatus({ code: SpanStatusCode.OK });
+    return result;
+  } catch (err) {
+    span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+    span.recordException(err);
+    throw err;
+  } finally {
+    span.end();
+  }
+});
+```
 
 ## Key principles
 
@@ -68,28 +104,3 @@ SDK (AlwaysOn)  →  Collector (sampling)  →  Backend (retention)
   All spans         Head or tail            Storage policies
   exported          sampling applied
 ```
-
-## Quick reference
-
-| Use Case | Rule |
-|----------|------|
-| Node.js backend | [nodejs](./rules/sdks/nodejs.md) |
-| Go backend | [go](./rules/sdks/go.md) |
-| Python backend | [python](./rules/sdks/python.md) |
-| Java backend | [java](./rules/sdks/java.md) |
-| Scala backend | [scala](./rules/sdks/scala.md) |
-| .NET backend | [dotnet](./rules/sdks/dotnet.md) |
-| Ruby backend | [ruby](./rules/sdks/ruby.md) |
-| PHP backend | [php](./rules/sdks/php.md) |
-| Browser frontend | [browser](./rules/sdks/browser.md) |
-| Next.js (App Router) | [nextjs](./rules/sdks/nextjs.md) |
-| Kubernetes pod spec | [k8s](./rules/platforms/k8s.md) |
-| Resolve config values | [resolve-values](./rules/resolve-values.md) |
-| Resource attributes | [resources](./rules/resources.md) |
-| Writing metrics | [metrics](./rules/metrics.md) |
-| Cardinality management | [metrics](./rules/metrics.md) |
-| Span naming, kind, status | [spans](./rules/spans.md) |
-| Writing logs | [logs](./rules/logs.md) |
-| Sensitive data / PII | [sensitive-data](./rules/sensitive-data.md) |
-| Verify telemetry reaches the backend | [validation](./rules/validation.md) |
-| Signal overview | [telemetry](./rules/telemetry.md) |
