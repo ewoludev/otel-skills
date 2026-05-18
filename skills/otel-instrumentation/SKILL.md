@@ -28,6 +28,7 @@ Expert guidance for implementing high-quality, cost-efficient OpenTelemetry tele
 | [metrics](./rules/metrics.md) | Metrics — instrument types, naming, units, cardinality |
 | [sensitive-data](./rules/sensitive-data.md) | Sensitive data — PII prevention, sanitization, redaction |
 | [validation](./rules/validation.md) | Telemetry validation — post-deployment verification checklist |
+| [wkontenerach-stack](./rules/wkontenerach-stack.md) | **Fork override** — local stack with Prometheus, Tempo, Loki, and Grafana (no Collector) for the "Ewolucja Developera" course |
 | [nodejs](./rules/sdks/nodejs.md) | Node.js instrumentation setup |
 | [go](./rules/sdks/go.md) | Go instrumentation setup |
 | [python](./rules/sdks/python.md) | Python instrumentation setup |
@@ -54,6 +55,8 @@ Follow these steps when instrumenting an application from scratch:
 3. **Add spans, metrics, and logs** — instrument your code following [spans](./rules/spans.md), [metrics](./rules/metrics.md), and [logs](./rules/logs.md).
 4. **Guard sensitive data** — scrub PII before export per [sensitive-data](./rules/sensitive-data.md).
 5. **Validate** — confirm telemetry reaches the backend using the checklist in [validation](./rules/validation.md).
+
+When the target deployment is the **local stack from the "Ewolucja Developera" course** (Prometheus, Tempo, Loki, and Grafana, no Collector), follow [wkontenerach-stack](./rules/wkontenerach-stack.md) for exporter configuration instead of the default SaaS-oriented examples in the SDK rules.
 
 The snippet below shows a complete span with attributes and status for Node.js — see [nodejs](./rules/sdks/nodejs.md) for full setup including SDK initialisation, exporter configuration, and auto-instrumentation:
 

@@ -1,4 +1,10 @@
-# Dash0 Agent Skills
+# Dash0 Agent Skills — Ewolucja Developera fork
+
+> **Fork notice.** This is a pinned fork of [dash0hq/agent-skills](https://github.com/dash0hq/agent-skills) (upstream tag `v1.2.5`) prepared for module 5 of the "Ewolucja Developera" course.
+> Upstream rule files are kept unmodified.
+> The fork adds one override rule, [`wkontenerach-stack`](./skills/otel-instrumentation/rules/wkontenerach-stack.md), that retargets the SDK from a SaaS endpoint to the local stack used in the course: Prometheus, Tempo, Loki, Promtail, and Grafana (no OpenTelemetry Collector).
+>
+> To target the SaaS Dash0 platform, install the upstream repo instead: `npx skills add https://github.com/dash0hq/agent-skills --all`.
 
 A collection of skills for AI coding agents to make applications observable with OpenTelemetry and [Dash0](https://www.dash0.com).
 Skills are packaged instructions and scripts that extend agent capabilities, following the [Agent Skills](https://agentskills.io/) format.
