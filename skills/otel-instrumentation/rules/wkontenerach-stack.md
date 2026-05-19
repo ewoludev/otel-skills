@@ -37,7 +37,7 @@ If even one condition is false, follow [resolve-values](./resolve-values.md) and
 | --- | --- | --- | --- |
 | Traces | Application SDK | OTLP HTTP (port 4318) | `tempo` container |
 | Metrics | Application `/metrics` endpoint | Pull (scrape) | `prometheus` container |
-| Logs | Application stdout (JSON) | Docker logs driver | `promtail` → `loki` container |
+| Logs | Application stdout (JSON) | Docker JSON log files (file scrape) | `alloy` → `loki` container |
 
 No authentication is required.
 All endpoints are unauthenticated and only reachable on the local Docker network or `localhost`.
@@ -132,9 +132,9 @@ The course stack's `prometheus.yml` scrape config must target the application:
 Pull scrapes load every active series into Prometheus memory on each tick.
 Follow [metrics § cardinality management](./metrics.md#cardinality-management) strictly — high-cardinality attributes (`user.id`, `url.full`) crash the local stack within minutes.
 
-## Logs: stdout JSON for Promtail
+## Logs: stdout JSON for Alloy
 
-The course stack uses Promtail to read application logs from the Docker logs driver.
+The course stack uses Grafana Alloy to read application logs from the Docker JSON log files on disk (`/var/lib/docker/containers/*/*-json.log`).
 Application code emits **structured JSON to stdout** — it does **not** export logs via OTLP.
 
 ### Step 1 — disable the OTLP logs exporter
@@ -148,7 +148,8 @@ OTEL_LOGS_EXPORTER=none
 ### Step 2 — emit structured JSON on stdout
 
 Configure the application's logging library to write one JSON record per line to stdout.
-Promtail parses each line through a `json` pipeline stage.
+Alloy parses each line through a `loki.process` component with a `stage.json` block.
+Because Docker wraps every stdout line in its own JSON envelope (`{"log":"...","stream":"stdout","time":"..."}`), Alloy must apply the `stage.json` block twice: once to extract the inner `log` field from the Docker envelope, then again on that field to parse the application's structured record.
 The exact library and serializer setup is SDK-specific — see the `structured logging` section in the matching rule under [./sdks/](./sdks/).
 
 **Example for Node.js**: use pino with its default JSON output, which already emits one structured JSON record per line on stdout.
@@ -180,8 +181,14 @@ const logger = pino({
 
 For other SDKs, use the equivalent extension point: a `structlog` processor for Python, a `MDC`-backed JSON encoder for Java/Logback, a custom `slog.Handler` for Go, or a `Serilog` enricher for .NET.
 
-Promtail's `pipeline_stages` in the course stack must include a `json` stage that parses the record and a `labels` stage that promotes `trace_id` and `span_id` to Loki labels.
+Alloy's `loki.process` component in the course stack must include a `stage.json` block that parses the record and a `stage.labels` block that promotes `trace_id` and `span_id` to Loki labels.
+The full Alloy pipeline is: `loki.source.file` (reads `/var/lib/docker/containers/*/*-json.log`) → `loki.process` (Docker envelope + application JSON + labels) → `loki.write` (`http://loki:3100/loki/api/v1/push`).
 This enables click-through from a Tempo span to the matching Loki log line in Grafana.
+
+> [!CAUTION]
+> Keep `trace_id` and `span_id` out of Loki labels in any deployment with non-trivial traffic — every unique value creates a new log stream and explodes Loki's index.
+> The course stack accepts the cardinality cost in exchange for one-click trace↔log correlation.
+> For production, drop these as labels and use `loki.process`'s `stage.structured_metadata` block instead, then query with `| trace_id="..."` (a non-indexed filter).
 
 ## Complete `.env.otel` example
 

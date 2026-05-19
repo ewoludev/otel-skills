@@ -1,8 +1,15 @@
-# Dash0 Agent Skills — Ewolucja Developera fork
+# OpenTelemetry Skills to configure Observability in your project
 
 > **Fork notice.** This is a pinned fork of [dash0hq/agent-skills](https://github.com/dash0hq/agent-skills) (upstream tag `v1.2.5`) prepared for module 5 of the "Ewolucja Developera" course.
 > Upstream rule files are kept unmodified.
-> The fork adds one override rule, [`wkontenerach-stack`](./skills/otel-instrumentation/rules/wkontenerach-stack.md), that retargets the SDK from a SaaS endpoint to the local stack used in the course: Prometheus, Tempo, Loki, Promtail, and Grafana (no OpenTelemetry Collector).
+> The fork adds one override rule, [`wkontenerach-stack`](./skills/otel-instrumentation/rules/wkontenerach-stack.md), that retargets the SDK from a SaaS endpoint to the local stack used in the course: Prometheus, Tempo, Loki, Alloy, and Grafana (no OpenTelemetry Collector).
+>
+> **What `wkontenerach-stack` overrides** (vs. the upstream SaaS-oriented defaults):
+> - **Traces** — direct OTLP HTTP push to Tempo on `:4318` (no Collector, no auth headers).
+> - **Metrics** — `OTEL_METRICS_EXPORTER=none` + OTEL `PrometheusExporter` on `:9464/metrics` (Prometheus scrapes; OTLP push is disabled).
+> - **Logs** — `OTEL_LOGS_EXPORTER=none` + structured JSON on stdout with manual `trace_id`/`span_id` injection; Alloy file-scrapes `/var/lib/docker/containers/*/*-json.log` and forwards to Loki.
+>
+> Activation is automatic: the rule fires when a `docker-compose.yml` declares services named `tempo`, `loki`, and `prometheus` with **no** `otel-collector` service.
 >
 > To target the SaaS Dash0 platform, install the upstream repo instead: `npx skills add https://github.com/dash0hq/agent-skills --all`.
 
