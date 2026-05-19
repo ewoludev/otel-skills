@@ -53,7 +53,38 @@ NEXT_PUBLIC_OTEL_ENDPOINT=https://<OTLP_ENDPOINT>
 NEXT_PUBLIC_OTEL_AUTH_TOKEN=your-auth-token-here
 ```
 
-### 3. Create `src/instrumentation.ts` (Server)
+### 3. Create the server instrumentation (two files)
+
+> **Split-file pattern is mandatory.** `instrumentation.ts` is loaded by Next.js
+> in **every** runtime it bundles — including the Edge runtime that backs
+> `middleware.ts` and edge route handlers. Putting Node-only code (SDK imports,
+> `process.on`, etc.) directly in `instrumentation.ts` produces:
+>
+> - Static `import` of `@opentelemetry/sdk-node` → Edge bundle crash at module
+>   evaluation: `__import_unsupported is not defined`.
+> - Inline `process.on(...)`, `process.exit(...)`, etc. → Next.js compile-time
+>   warning: `A Node.js API is used (process.on) which is not supported in the
+>   Edge Runtime` (the analyzer is syntactic — it does **not** honor the
+>   `NEXT_RUNTIME === 'nodejs'` guard, even though the code is unreachable on
+>   Edge at runtime).
+>
+> The fix is the same in both cases: keep `instrumentation.ts` as a thin shim
+> with only the runtime guard, and move every Node-only line into a separate
+> file dynamic-imported from `register()`. See
+> [Edge runtime crashes and warnings](#edge-runtime-crashes-and-warnings) below.
+
+`src/instrumentation.ts` — runtime guard only, nothing else:
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') {
+    return;
+  }
+  await import('./instrumentation.node');
+}
+```
+
+`src/instrumentation.node.ts` — the real setup, only loaded on Node:
 
 ```typescript
 import { NodeSDK } from '@opentelemetry/sdk-node';
@@ -73,98 +104,92 @@ import {
   ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions';
 
-export async function register() {
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    // CRITICAL: Read env vars inside register() to ensure .env.local is loaded
-    const OTEL_ENDPOINT =
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
-    const OTEL_AUTH_TOKEN = process.env.NEXT_PUBLIC_OTEL_AUTH_TOKEN;
+// CRITICAL: Read env vars at the top of this file (not at module load of
+// instrumentation.ts) so .env.local is already loaded by the time we get here.
+const OTEL_ENDPOINT =
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
+const OTEL_AUTH_TOKEN = process.env.NEXT_PUBLIC_OTEL_AUTH_TOKEN;
 
-    console.log('[OTel] Endpoint:', OTEL_ENDPOINT);
-    console.log('[OTel] Auth:', OTEL_AUTH_TOKEN ? 'configured' : 'missing');
+console.log('[OTel] Endpoint:', OTEL_ENDPOINT);
+console.log('[OTel] Auth:', OTEL_AUTH_TOKEN ? 'configured' : 'missing');
 
-    const exporterHeaders: Record<string, string> = {};
-    if (OTEL_AUTH_TOKEN) {
-      exporterHeaders['Authorization'] = `Bearer ${OTEL_AUTH_TOKEN}`;
-    }
-
-    const resource = resourceFromAttributes({
-      [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'nextjs-app',
-      [ATTR_SERVICE_VERSION]: '1.0.0',
-      'deployment.environment': process.env.NODE_ENV || 'development',
-    });
-
-    // Initialize LoggerProvider for structured logging
-    const logExporter = new OTLPLogExporter({
-      url: `${OTEL_ENDPOINT}/v1/logs`,
-      headers: exporterHeaders,
-    });
-
-    const loggerProvider = new LoggerProvider({
-      resource,
-      processors: [new BatchLogRecordProcessor(logExporter)],
-    });
-    logs.setGlobalLoggerProvider(loggerProvider);
-
-    // Initialize NodeSDK for traces and metrics
-    const sdk = new NodeSDK({
-      resource,
-      traceExporter: new OTLPTraceExporter({
-        url: `${OTEL_ENDPOINT}/v1/traces`,
-        headers: exporterHeaders,
-      }),
-      metricReader: new PeriodicExportingMetricReader({
-        exporter: new OTLPMetricExporter({
-          url: `${OTEL_ENDPOINT}/v1/metrics`,
-          headers: exporterHeaders,
-        }),
-        exportIntervalMillis: 10000,
-      }),
-      instrumentations: [
-        getNodeAutoInstrumentations({
-          '@opentelemetry/instrumentation-fs': { enabled: false },
-          '@opentelemetry/instrumentation-dns': { enabled: false },
-        }),
-      ],
-    });
-
-    sdk.start();
-
-    // Graceful shutdown — flush all providers before exit
-    async function shutdown() {
-      await loggerProvider.forceFlush();
-      await Promise.allSettled([
-        sdk.shutdown(),
-        loggerProvider.shutdown(),
-      ]);
-    }
-
-    function logExceptionAndExit(message: string, error: Error, exitCode: number) {
-      logs.getLogger('shutdown').emit({
-        severityNumber: 17, // ERROR
-        severityText: 'ERROR',
-        body: message,
-        attributes: {
-          'exception.type': error.name,
-          'exception.message': error.message,
-          'exception.stacktrace': error.stack,
-        },
-      });
-      shutdown().finally(() => process.exit(exitCode));
-    }
-
-    process.on('SIGTERM', () => shutdown().finally(() => process.exit(0)));
-    process.on('SIGINT', () => shutdown().finally(() => process.exit(0)));
-
-    process.on('uncaughtException', (error) => {
-      logExceptionAndExit('uncaught.exception', error, 1);
-    });
-    process.on('unhandledRejection', (reason) => {
-      const error = reason instanceof Error ? reason : new Error(String(reason));
-      logExceptionAndExit('unhandled.rejection', error, 1);
-    });
-  }
+const exporterHeaders: Record<string, string> = {};
+if (OTEL_AUTH_TOKEN) {
+  exporterHeaders['Authorization'] = `Bearer ${OTEL_AUTH_TOKEN}`;
 }
+
+const resource = resourceFromAttributes({
+  [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'nextjs-app',
+  [ATTR_SERVICE_VERSION]: '1.0.0',
+  'deployment.environment.name': process.env.NODE_ENV || 'development',
+});
+
+// Initialize LoggerProvider for structured logging
+const logExporter = new OTLPLogExporter({
+  url: `${OTEL_ENDPOINT}/v1/logs`,
+  headers: exporterHeaders,
+});
+
+const loggerProvider = new LoggerProvider({
+  resource,
+  processors: [new BatchLogRecordProcessor(logExporter)],
+});
+logs.setGlobalLoggerProvider(loggerProvider);
+
+// Initialize NodeSDK for traces and metrics
+const sdk = new NodeSDK({
+  resource,
+  traceExporter: new OTLPTraceExporter({
+    url: `${OTEL_ENDPOINT}/v1/traces`,
+    headers: exporterHeaders,
+  }),
+  metricReader: new PeriodicExportingMetricReader({
+    exporter: new OTLPMetricExporter({
+      url: `${OTEL_ENDPOINT}/v1/metrics`,
+      headers: exporterHeaders,
+    }),
+    exportIntervalMillis: 10000,
+  }),
+  instrumentations: [
+    getNodeAutoInstrumentations({
+      '@opentelemetry/instrumentation-fs': { enabled: false },
+      '@opentelemetry/instrumentation-dns': { enabled: false },
+    }),
+  ],
+});
+
+sdk.start();
+
+// Graceful shutdown — flush all providers before exit
+async function shutdown() {
+  await loggerProvider.forceFlush();
+  await Promise.allSettled([sdk.shutdown(), loggerProvider.shutdown()]);
+}
+
+function logExceptionAndExit(message: string, error: Error, exitCode: number) {
+  logs.getLogger('shutdown').emit({
+    severityNumber: 17, // ERROR
+    severityText: 'ERROR',
+    body: message,
+    attributes: {
+      'exception.type': error.name,
+      'exception.message': error.message,
+      'exception.stacktrace': error.stack,
+    },
+  });
+  shutdown().finally(() => process.exit(exitCode));
+}
+
+process.on('SIGTERM', () => shutdown().finally(() => process.exit(0)));
+process.on('SIGINT', () => shutdown().finally(() => process.exit(0)));
+
+process.on('uncaughtException', (error) => {
+  logExceptionAndExit('uncaught.exception', error, 1);
+});
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  logExceptionAndExit('unhandled.rejection', error, 1);
+});
 ```
 
 ### 4. Create `src/instrumentation-client.ts` (Client)
@@ -224,6 +249,67 @@ Set `service.name`, `service.version`, and `deployment.environment.name` for eve
 See [resource attributes](../resources.md) for the full list of required and recommended attributes.
 
 ## Common Gotchas
+
+### Edge runtime crashes and warnings
+
+Next.js loads `instrumentation.ts` in **every** runtime it bundles — including
+the Edge runtime that backs `middleware.ts`, edge route handlers, and certain
+internal request paths. Any Node-only code that appears in `instrumentation.ts`
+itself triggers one of two failures:
+
+| Symptom | Trigger | When you see it |
+|---------|---------|-----------------|
+| `__import_unsupported is not defined` (hard crash at module eval) | Static `import` of a Node-only package: `@opentelemetry/sdk-node`, `auto-instrumentations-node`, `exporter-*-http`, `sdk-metrics`, `sdk-logs` | The moment any Edge code path is exercised (typically when `middleware.ts` is added) |
+| `A Node.js API is used (process.on / process.exit / …) which is not supported in the Edge Runtime` (compile-time warning) | Inline use of a Node-only API anywhere in the file | Every dev/build run, immediately |
+
+**Critical point:** the Edge analyzer is purely syntactic — it does **not**
+honor `if (process.env.NEXT_RUNTIME === 'nodejs')` guards. Code guarded inside
+`register()` will still produce the warning (and, for static imports, the
+crash) because the analyzer scans the entire file regardless of which branch
+runs at runtime.
+
+The fix in both cases is the same: keep `instrumentation.ts` as a thin shim
+with only the runtime guard, and move every Node-only line into a separate
+file dynamic-imported from `register()`:
+
+```typescript
+// BAD: imports + Node APIs inline in instrumentation.ts
+// — crashes Edge bundle AND emits process.on warnings.
+import { NodeSDK } from '@opentelemetry/sdk-node';
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    new NodeSDK(/* ... */).start();
+    process.on('SIGTERM', shutdown); // ⚠ Edge warning
+  }
+}
+
+// GOOD: split files. instrumentation.ts is shim-only.
+// src/instrumentation.ts
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  await import('./instrumentation.node');
+}
+
+// src/instrumentation.node.ts — static imports + process.on are fine here;
+// this file is never bundled into the Edge runtime.
+import { NodeSDK } from '@opentelemetry/sdk-node';
+const sdk = new NodeSDK(/* ... */);
+sdk.start();
+process.on('SIGTERM', () => sdk.shutdown());
+```
+
+Why this works: dynamic `import()` of a relative path is gated by control flow
+that webpack tracks per-runtime. When the Edge build reaches `register()`, the
+guard returns before the `await import('./instrumentation.node')` is
+evaluated, so the Node-only file is never pulled into the Edge chunk. The
+analyzer also stops at the dynamic-import boundary — only the shim file is
+scanned for Edge violations.
+
+**Don't try to keep everything in one file by using dynamic imports inside the
+guard.** It fixes the `__import_unsupported` crash but does NOT silence the
+`process.on` warning — inline `process.on(...)` is still flagged by the
+syntactic analyzer even when it's behind the runtime guard. Splitting the file
+is the only pattern that addresses both symptoms.
 
 ### ENV Vars Must Be Read Inside `register()`
 
